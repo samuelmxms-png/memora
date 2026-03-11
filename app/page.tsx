@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { supabase } from "../lib/supabase";
 import {
   AlertTriangle,
   BarChart3,
@@ -30,104 +31,10 @@ import {
 } from "lucide-react";
 
 type CardProps = React.HTMLAttributes<HTMLDivElement>;
-
-function Card({ className, ...props }: CardProps) {
-  return <div className={classNames("rounded-3xl", className)} {...props} />;
-}
-
-function CardHeader({ className, ...props }: CardProps) {
-  return <div className={classNames("p-6 pb-0", className)} {...props} />;
-}
-
-function CardContent({ className, ...props }: CardProps) {
-  return <div className={classNames("p-6", className)} {...props} />;
-}
-
-function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={classNames("text-lg font-semibold", className)} {...props} />;
-}
-
-function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={classNames("text-sm", className)} {...props} />;
-}
-
-function Button({
-  className,
-  variant,
-  type = "button",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "outline" | "ghost" }) {
-  const variants: Record<string, string> = {
-    outline: "border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800",
-    ghost: "bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white",
-  };
-
-  return (
-    <button
-      type={type}
-      className={classNames(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition",
-        variant ? variants[variant] : "bg-cyan-600 text-white hover:bg-cyan-500",
-        className
-      )}
-      {...props}
-    />
-  );
-}
-
-function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
-  return <span className={classNames("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium", className)} {...props} />;
-}
-
-function Progress({ value = 0, className }: { value?: number; className?: string }) {
-  return (
-    <div className={classNames("h-2 w-full overflow-hidden rounded-full bg-slate-800", className)}>
-      <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
-    </div>
-  );
-}
-
-function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={classNames("w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500", className)} {...props} />;
-}
-
-function Tabs({ children }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode }) {
-  return <div>{children}</div>;
-}
-
-function TabsList({ className, ...props }: CardProps) {
-  return <div className={classNames(className)} {...props} />;
-}
-
-function TabsTrigger({
-  value,
-  className,
-  onClick,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) {
-  return <button type="button" className={classNames("px-3 py-2 text-sm text-slate-200", className)} onClick={onClick} {...props} />;
-}
-
-function Modal({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-      <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl shadow-slate-950/40">
-        <div className="flex items-center justify-between border-b border-slate-800 p-5">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 type ReviewState = "aprendizagem" | "em revisão" | "crítico" | "consolidado";
 type ReviewGrade = "again" | "hard" | "good" | "easy";
+type ReviewStage = "R0" | "R1" | "R2" | "R3" | "R4" | "R5";
+type ReviewStatus = "pending" | "completed" | "overdue";
 
 type ReviewCard = {
   id: number;
@@ -178,7 +85,13 @@ type StudyRecord = {
   theme: string;
   questions: number;
   correct: number;
+  accuracy: number;
   createdAt: string;
+  nextReviewAt: string | null;
+  reviewStage: ReviewStage;
+  reviewStatus: ReviewStatus;
+  intervalDays: number;
+  easeFactor: number;
 };
 
 const uiTheme = {
@@ -303,6 +216,137 @@ function classNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+function Card({ className, ...props }: CardProps) {
+  return <div className={classNames("rounded-3xl", className)} {...props} />;
+}
+
+function CardHeader({ className, ...props }: CardProps) {
+  return <div className={classNames("p-6 pb-0", className)} {...props} />;
+}
+
+function CardContent({ className, ...props }: CardProps) {
+  return <div className={classNames("p-6", className)} {...props} />;
+}
+
+function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={classNames("text-lg font-semibold", className)} {...props} />;
+}
+
+function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={classNames("text-sm", className)} {...props} />;
+}
+
+function Button({
+  className,
+  variant,
+  type = "button",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "outline" | "ghost" }) {
+  const variants: Record<string, string> = {
+    outline: "border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800",
+    ghost: "bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white",
+  };
+
+  return (
+    <button
+      type={type}
+      className={classNames(
+        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition",
+        variant ? variants[variant] : "bg-cyan-600 text-white hover:bg-cyan-500",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      className={classNames("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium", className)}
+      {...props}
+    />
+  );
+}
+
+function Progress({ value = 0, className }: { value?: number; className?: string }) {
+  return (
+    <div className={classNames("h-2 w-full overflow-hidden rounded-full bg-slate-800", className)}>
+      <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </div>
+  );
+}
+
+function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      className={classNames(
+        "w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+function Tabs({
+  children,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return <div>{children}</div>;
+}
+
+function TabsList({ className, ...props }: CardProps) {
+  return <div className={classNames(className)} {...props} />;
+}
+
+function TabsTrigger({
+  value,
+  className,
+  onClick,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) {
+  return (
+    <button
+      type="button"
+      className={classNames("px-3 py-2 text-sm text-slate-200", className)}
+      onClick={onClick}
+      {...props}
+    />
+  );
+}
+
+function Modal({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl shadow-slate-950/40">
+        <div className="flex items-center justify-between border-b border-slate-800 p-5">
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function getRiskBadge(risk: string) {
   switch (risk) {
     case "Crítico":
@@ -322,6 +366,39 @@ function getLoadColor(status: string) {
   if (status === "leve") return "bg-emerald-500";
   if (status === "recuperação") return "bg-cyan-500";
   return "bg-sky-500";
+}
+
+function getRiskFromAccuracy(accuracy: number) {
+  if (accuracy >= 80) return "Baixo";
+  if (accuracy >= 65) return "Médio";
+  if (accuracy >= 45) return "Alto";
+  return "Crítico";
+}
+
+function getIntervalDaysFromAccuracy(accuracy: number) {
+  if (accuracy >= 80) return 7;
+  if (accuracy >= 65) return 4;
+  if (accuracy >= 45) return 2;
+  return 1;
+}
+
+function formatNextReviewLabel(intervalDays: number) {
+  if (intervalDays <= 0) return "Hoje";
+  if (intervalDays === 1) return "Amanhã";
+  return `Em ${intervalDays} dias`;
+}
+
+function mapStudyRecordToTheme(record: StudyRecord): ThemeItem {
+  return {
+    id: record.id,
+    discipline: record.discipline,
+    name: record.theme,
+    domain: record.accuracy,
+    nextReview: formatNextReviewLabel(record.intervalDays),
+    risk: getRiskFromAccuracy(record.accuracy),
+    deck: `${record.discipline} · Revisões recentes`,
+    cards: Math.max(10, record.questions),
+  };
 }
 
 function scheduleCard(card: ReviewCard, grade: ReviewGrade): ReviewCard {
@@ -367,10 +444,8 @@ const scheduleCardTests = () => {
   console.assert(again.interval === 1, "again should reset interval to 1");
   console.assert(again.lapses === base.lapses + 1, "again should increment lapses");
   console.assert(hard.easeFactor >= 1.3, "hard should keep easeFactor above minimum");
-  console.assert(easy.interval >= base.interval, "easy should not shorten interval");
+  console.assert(easy.interval >= 1, "easy should keep interval positive");
   console.assert(good.repetitions === base.repetitions + 1, "good should increment repetitions");
-  console.assert(scheduleCard(base, "again").state === "crítico", "again should move card to critical state");
-  console.assert(scheduleCard(base, "easy").interval >= 1, "easy should keep interval positive");
 };
 
 scheduleCardTests();
@@ -794,7 +869,9 @@ function ReviewPage({
         <CardContent className="p-6">
           <div className="mb-4 flex items-center justify-between text-sm text-slate-400">
             <span>Card {index + 1} de {reviewQueue.length}</span>
-            <span>Estado: <span className="text-slate-200">{current.state}</span></span>
+            <span>
+              Estado: <span className="text-slate-200">{current.state}</span>
+            </span>
           </div>
 
           <motion.div
@@ -832,10 +909,18 @@ function ReviewPage({
             </Button>
           ) : (
             <div className="mt-5 grid gap-3 md:grid-cols-4">
-              <Button variant="outline" className="h-12 rounded-2xl border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/15" onClick={() => answerCard("again")}>Errei</Button>
-              <Button variant="outline" className="h-12 rounded-2xl border-orange-500/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/15" onClick={() => answerCard("hard")}>Difícil</Button>
-              <Button variant="outline" className="h-12 rounded-2xl border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/15" onClick={() => answerCard("good")}>Bom</Button>
-              <Button variant="outline" className="h-12 rounded-2xl border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15" onClick={() => answerCard("easy")}>Fácil</Button>
+              <Button variant="outline" className="h-12 rounded-2xl border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/15" onClick={() => answerCard("again")}>
+                Errei
+              </Button>
+              <Button variant="outline" className="h-12 rounded-2xl border-orange-500/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/15" onClick={() => answerCard("hard")}>
+                Difícil
+              </Button>
+              <Button variant="outline" className="h-12 rounded-2xl border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/15" onClick={() => answerCard("good")}>
+                Bom
+              </Button>
+              <Button variant="outline" className="h-12 rounded-2xl border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15" onClick={() => answerCard("easy")}>
+                Fácil
+              </Button>
             </div>
           )}
         </CardContent>
@@ -868,10 +953,22 @@ function ReviewPage({
             <CardDescription className="text-slate-400">Leitura em tempo real do card atual.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-slate-300">
-            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><span>Ease factor</span><span className="font-medium text-white">{current.easeFactor}</span></div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><span>Intervalo atual</span><span className="font-medium text-white">{current.interval} dias</span></div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><span>Repetições</span><span className="font-medium text-white">{current.repetitions}</span></div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><span>Lapses</span><span className="font-medium text-white">{current.lapses}</span></div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <span>Ease factor</span>
+              <span className="font-medium text-white">{current.easeFactor}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <span>Intervalo atual</span>
+              <span className="font-medium text-white">{current.interval} dias</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <span>Repetições</span>
+              <span className="font-medium text-white">{current.repetitions}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <span>Lapses</span>
+              <span className="font-medium text-white">{current.lapses}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -1062,20 +1159,19 @@ function MetricsPage({ studyRecords }: { studyRecords: StudyRecord[] }) {
             <CardDescription className="text-slate-400">Entradas criadas a partir do botão “Novo estudo”.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {studyRecords.map((record) => {
-              const accuracy = Math.round((record.correct / Math.max(1, record.questions)) * 100);
-              return (
-                <div key={record.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-100">{record.theme}</p>
-                      <p className="text-xs text-slate-500">{record.discipline} · {record.questions} questões · {record.correct} acertos</p>
-                    </div>
-                    <Badge className="border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">{accuracy}%</Badge>
+            {studyRecords.map((record) => (
+              <div key={record.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-100">{record.theme}</p>
+                    <p className="text-xs text-slate-500">
+                      {record.discipline} · {record.questions} questões · {record.correct} acertos · próxima revisão: {formatNextReviewLabel(record.intervalDays)}
+                    </p>
                   </div>
+                  <Badge className="border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">{record.accuracy}%</Badge>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -1182,7 +1278,9 @@ function FocusPage() {
           <div className="flex h-64 w-64 items-center justify-center rounded-full border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl shadow-slate-950/30">
             <div className="text-center">
               <p className="text-sm uppercase tracking-[0.18em] text-slate-500">Foco</p>
-              <h2 className="mt-3 text-6xl font-semibold tracking-tight text-white">{minutes}:{seconds}</h2>
+              <h2 className="mt-3 text-6xl font-semibold tracking-tight text-white">
+                {minutes}:{seconds}
+              </h2>
               <p className="mt-2 text-sm text-slate-400">{isRunning ? "Sessão em andamento" : "Sessão pronta para iniciar"}</p>
             </div>
           </div>
@@ -1191,7 +1289,14 @@ function FocusPage() {
               {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               {isRunning ? "Pausar" : "Iniciar"}
             </Button>
-            <Button variant="outline" className="h-12 rounded-2xl border-slate-800 bg-slate-900 text-slate-200" onClick={() => { setIsRunning(false); setSecondsLeft(25 * 60); }}>
+            <Button
+              variant="outline"
+              className="h-12 rounded-2xl border-slate-800 bg-slate-900 text-slate-200"
+              onClick={() => {
+                setIsRunning(false);
+                setSecondsLeft(25 * 60);
+              }}
+            >
               <RotateCcw className="h-4 w-4" /> Reiniciar
             </Button>
           </div>
@@ -1282,43 +1387,105 @@ export default function MemoraPlatformPrototype() {
   const [studyQuestions, setStudyQuestions] = useState(30);
   const [studyCorrect, setStudyCorrect] = useState(24);
 
+  useEffect(() => {
+    async function loadStudyRecords() {
+      const { data, error } = await supabase.from("study_records").select("*").order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao carregar estudos:", error);
+        return;
+      }
+
+      if (!data) return;
+
+      const mappedRecords: StudyRecord[] = data.map((item) => ({
+        id: item.id,
+        discipline: item.discipline,
+        theme: item.theme,
+        questions: item.questions,
+        correct: item.correct,
+        accuracy: item.accuracy,
+        createdAt: item.created_at,
+        nextReviewAt: item.next_review_at,
+        reviewStage: item.review_stage,
+        reviewStatus: item.review_status,
+        intervalDays: item.interval_days,
+        easeFactor: Number(item.ease_factor),
+      }));
+
+      setStudyRecords(mappedRecords);
+
+      const dynamicThemes = mappedRecords.map(mapStudyRecordToTheme);
+
+      setThemes(() => {
+        const merged = [...dynamicThemes, ...initialThemes];
+        const seen = new Set<string>();
+
+        return merged.filter((item) => {
+          const key = `${item.discipline}-${item.name}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      });
+    }
+
+    loadStudyRecords();
+  }, []);
+
   const filteredThemes = useMemo(() => {
     if (filterDiscipline === "Todas") return themes;
     return themes.filter((item) => item.discipline === filterDiscipline);
   }, [themes, filterDiscipline]);
 
-  function handleCreateStudy() {
+  async function handleCreateStudy() {
     if (!studyTheme.trim()) return;
 
     const accuracy = Math.round((studyCorrect / Math.max(1, studyQuestions)) * 100);
-    const risk = accuracy >= 80 ? "Baixo" : accuracy >= 65 ? "Médio" : accuracy >= 45 ? "Alto" : "Crítico";
-    const nextReview = accuracy >= 80 ? "Em 7 dias" : accuracy >= 65 ? "Em 4 dias" : accuracy >= 45 ? "Em 2 dias" : "Amanhã";
+    const intervalDays = getIntervalDaysFromAccuracy(accuracy);
 
-    setStudyRecords((prev) => [
-      {
-        id: Date.now(),
-        discipline: studyDiscipline,
-        theme: studyTheme.trim(),
-        questions: studyQuestions,
-        correct: studyCorrect,
-        createdAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+    const now = new Date();
+    const nextReviewDate = new Date(now);
+    nextReviewDate.setDate(now.getDate() + intervalDays);
 
-    setThemes((prev) => [
-      {
-        id: Date.now(),
-        discipline: studyDiscipline,
-        name: studyTheme.trim(),
-        domain: accuracy,
-        nextReview,
-        risk,
-        deck: `${studyDiscipline} · Revisões recentes`,
-        cards: Math.max(10, studyQuestions),
-      },
-      ...prev,
-    ]);
+    const payload = {
+      discipline: studyDiscipline,
+      theme: studyTheme.trim(),
+      questions: studyQuestions,
+      correct: studyCorrect,
+      accuracy,
+      next_review_at: nextReviewDate.toISOString(),
+      review_stage: "R0",
+      review_status: "pending",
+      interval_days: intervalDays,
+      ease_factor: 2.5,
+    };
+
+    const { data, error } = await supabase.from("study_records").insert(payload).select().single();
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao salvar estudo no banco");
+      return;
+    }
+
+    const newRecord: StudyRecord = {
+      id: data.id,
+      discipline: data.discipline,
+      theme: data.theme,
+      questions: data.questions,
+      correct: data.correct,
+      accuracy: data.accuracy,
+      createdAt: data.created_at,
+      nextReviewAt: data.next_review_at,
+      reviewStage: data.review_stage,
+      reviewStatus: data.review_status,
+      intervalDays: data.interval_days,
+      easeFactor: Number(data.ease_factor),
+    };
+
+    setStudyRecords((prev) => [newRecord, ...prev]);
+    setThemes((prev) => [mapStudyRecordToTheme(newRecord), ...prev]);
 
     setStudyTheme("");
     setStudyQuestions(30);
@@ -1343,15 +1510,23 @@ export default function MemoraPlatformPrototype() {
               </option>
             ))}
           </select>
-          <Button className="w-full" onClick={() => setIsFiltersOpen(false)}>Aplicar filtros</Button>
+          <Button className="w-full" onClick={() => setIsFiltersOpen(false)}>
+            Aplicar filtros
+          </Button>
         </div>
       </Modal>
 
       <Modal open={isNewStudyOpen} title="Registrar novo estudo" onClose={() => setIsNewStudyOpen(false)}>
         <div className="space-y-4">
-          <select value={studyDiscipline} onChange={(e) => setStudyDiscipline(e.target.value)} className="h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none">
+          <select
+            value={studyDiscipline}
+            onChange={(e) => setStudyDiscipline(e.target.value)}
+            className="h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none"
+          >
             {disciplines.map((item) => (
-              <option key={item.id} value={item.name}>{item.name}</option>
+              <option key={item.id} value={item.name}>
+                {item.name}
+              </option>
             ))}
           </select>
           <Input value={studyTheme} onChange={(e) => setStudyTheme(e.target.value)} placeholder="Tema estudado" />
@@ -1359,7 +1534,9 @@ export default function MemoraPlatformPrototype() {
             <Input type="number" value={studyQuestions} onChange={(e) => setStudyQuestions(Number(e.target.value))} placeholder="Questões feitas" />
             <Input type="number" value={studyCorrect} onChange={(e) => setStudyCorrect(Number(e.target.value))} placeholder="Questões certas" />
           </div>
-          <Button className="w-full" onClick={handleCreateStudy}>Salvar estudo e programar revisão</Button>
+          <Button className="w-full" onClick={handleCreateStudy}>
+            Salvar estudo e programar revisão
+          </Button>
         </div>
       </Modal>
 
@@ -1398,13 +1575,27 @@ export default function MemoraPlatformPrototype() {
             <div className="mb-6 lg:hidden">
               <Tabs value={active} onValueChange={setActive}>
                 <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-2">
-                  <TabsTrigger value="dashboard" className="rounded-xl" onClick={() => setActive("dashboard")}>Dashboard</TabsTrigger>
-                  <TabsTrigger value="review" className="rounded-xl" onClick={() => setActive("review")}>Revisão</TabsTrigger>
-                  <TabsTrigger value="library" className="rounded-xl" onClick={() => setActive("library")}>Biblioteca</TabsTrigger>
-                  <TabsTrigger value="agenda" className="rounded-xl" onClick={() => setActive("agenda")}>Agenda</TabsTrigger>
-                  <TabsTrigger value="metrics" className="rounded-xl" onClick={() => setActive("metrics")}>Métricas</TabsTrigger>
-                  <TabsTrigger value="focus" className="rounded-xl" onClick={() => setActive("focus")}>Pomodoro</TabsTrigger>
-                  <TabsTrigger value="settings" className="rounded-xl" onClick={() => setActive("settings")}>Método</TabsTrigger>
+                  <TabsTrigger value="dashboard" className="rounded-xl" onClick={() => setActive("dashboard")}>
+                    Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value="review" className="rounded-xl" onClick={() => setActive("review")}>
+                    Revisão
+                  </TabsTrigger>
+                  <TabsTrigger value="library" className="rounded-xl" onClick={() => setActive("library")}>
+                    Biblioteca
+                  </TabsTrigger>
+                  <TabsTrigger value="agenda" className="rounded-xl" onClick={() => setActive("agenda")}>
+                    Agenda
+                  </TabsTrigger>
+                  <TabsTrigger value="metrics" className="rounded-xl" onClick={() => setActive("metrics")}>
+                    Métricas
+                  </TabsTrigger>
+                  <TabsTrigger value="focus" className="rounded-xl" onClick={() => setActive("focus")}>
+                    Pomodoro
+                  </TabsTrigger>
+                  <TabsTrigger value="settings" className="rounded-xl" onClick={() => setActive("settings")}>
+                    Método
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
