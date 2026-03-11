@@ -1,5 +1,6 @@
 "use client";
-import React, { useMemo, useState } from "react";
+
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -15,14 +16,19 @@ import {
   Filter,
   Flame,
   Layers3,
+  Pause,
+  Play,
   Plus,
   RefreshCcw,
+  RotateCcw,
   Search,
   Sparkles,
   Target,
   Timer,
   Trophy,
+  X,
 } from "lucide-react";
+
 type CardProps = React.HTMLAttributes<HTMLDivElement>;
 
 function Card({ className, ...props }: CardProps) {
@@ -102,6 +108,24 @@ function TabsTrigger({
   return <button type="button" className={classNames("px-3 py-2 text-sm text-slate-200", className)} onClick={onClick} {...props} />;
 }
 
+function Modal({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl shadow-slate-950/40">
+        <div className="flex items-center justify-between border-b border-slate-800 p-5">
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 type ReviewState = "aprendizagem" | "em revisão" | "crítico" | "consolidado";
 type ReviewGrade = "again" | "hard" | "good" | "easy";
 
@@ -137,6 +161,26 @@ type PlannedTopic = {
   scheduled: string;
 };
 
+type ThemeItem = {
+  id: number;
+  discipline: string;
+  name: string;
+  domain: number;
+  nextReview: string;
+  risk: string;
+  deck: string;
+  cards: number;
+};
+
+type StudyRecord = {
+  id: number;
+  discipline: string;
+  theme: string;
+  questions: number;
+  correct: number;
+  createdAt: string;
+};
+
 const uiTheme = {
   panel: "bg-slate-900/70",
   border: "border-slate-800",
@@ -149,7 +193,7 @@ const disciplines = [
   { id: 4, name: "Matemática", color: "bg-amber-500", cards: 94, mastery: 67 },
 ];
 
-const themes = [
+const initialThemes: ThemeItem[] = [
   {
     id: 1,
     discipline: "Biologia",
@@ -427,7 +471,15 @@ function Sidebar({ active, onChange }: { active: string; onChange: (value: strin
   );
 }
 
-function DashboardPage({ reviewQueue }: { reviewQueue: ReviewCard[] }) {
+function DashboardPage({
+  reviewQueue,
+  themes,
+  onOpenNewStudy,
+}: {
+  reviewQueue: ReviewCard[];
+  themes: ThemeItem[];
+  onOpenNewStudy: () => void;
+}) {
   const [todayTasks, setTodayTasks] = useState<TodayTask[]>([
     { id: 1, discipline: "Física", theme: "Eletrodinâmica", type: "Revisão prioritária", cards: 18, progress: 52, nextReview: "Hoje, 14:00", done: false },
     { id: 2, discipline: "Química", theme: "Funções Orgânicas", type: "Revisão programada", cards: 14, progress: 61, nextReview: "Hoje, 16:30", done: false },
@@ -444,6 +496,7 @@ function DashboardPage({ reviewQueue }: { reviewQueue: ReviewCard[] }) {
   const mature = reviewQueue.filter((c) => c.state === "consolidado").length;
   const completedToday = todayTasks.filter((task) => task.done).length;
   const pendingToday = todayTasks.filter((task) => !task.done).length;
+  const criticalThemes = themes.filter((item) => item.risk === "Crítico" || item.risk === "Alto").length;
 
   function toggleTask(id: number) {
     setTodayTasks((prev) =>
@@ -498,9 +551,15 @@ function DashboardPage({ reviewQueue }: { reviewQueue: ReviewCard[] }) {
                 <p className="mt-1 text-xs text-slate-400">Já reagendados para frente</p>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <p className="text-xs text-slate-500">Frase do dia</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-100">O que você revisa com constância deixa de ser dúvida e vira domínio.</p>
+                <p className="text-xs text-slate-500">Temas em atenção</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{criticalThemes}</p>
+                <p className="mt-1 text-xs text-slate-400">Prioridade alta para revisão</p>
               </div>
+            </div>
+            <div className="mt-6">
+              <Button className="h-11 rounded-2xl px-5" onClick={onOpenNewStudy}>
+                <Plus className="h-4 w-4" /> Registrar estudo de hoje
+              </Button>
             </div>
           </div>
 
@@ -820,7 +879,7 @@ function ReviewPage({
   );
 }
 
-function LibraryPage() {
+function LibraryPage({ themes, onOpenDeck }: { themes: ThemeItem[]; onOpenDeck: (deck: string) => void }) {
   const [query, setQuery] = useState("");
   const filtered = themes.filter((t) => `${t.discipline} ${t.name} ${t.deck}`.toLowerCase().includes(query.toLowerCase()));
 
@@ -836,9 +895,6 @@ function LibraryPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar tema ou deck" className="h-11 w-72 rounded-2xl border-slate-800 bg-slate-900 pl-10 text-slate-100" />
           </div>
-          <Button variant="outline" className="h-11 rounded-2xl border-slate-800 bg-slate-900 text-slate-200">
-            <Plus className="mr-2 h-4 w-4" /> Novo tema
-          </Button>
         </div>
       </div>
 
@@ -890,7 +946,7 @@ function LibraryPage() {
                 <Progress value={item.domain} className="h-2 bg-slate-800" />
                 <p className="mt-3 text-xs text-slate-500">Próxima revisão: {item.nextReview}</p>
               </div>
-              <Button variant="ghost" className="justify-between rounded-2xl text-slate-300 hover:bg-slate-800 hover:text-white">
+              <Button variant="ghost" className="justify-between rounded-2xl text-slate-300 hover:bg-slate-800 hover:text-white" onClick={() => onOpenDeck(item.deck)}>
                 Abrir deck <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -984,7 +1040,7 @@ function AgendaPage() {
   );
 }
 
-function MetricsPage() {
+function MetricsPage({ studyRecords }: { studyRecords: StudyRecord[] }) {
   return (
     <div className="space-y-6">
       <div>
@@ -998,6 +1054,31 @@ function MetricsPage() {
         <StatCard icon={RefreshCcw} title="Consistência" value="89%" helper="Sessões concluídas vs programadas" accent="bg-violet-500/20" />
         <StatCard icon={AlertTriangle} title="Risco de esquecimento" value="11 temas" helper="Precisam de recuperação nos próximos 7 dias" accent="bg-red-500/20" />
       </section>
+
+      {studyRecords.length > 0 && (
+        <Card className={classNames(uiTheme.panel, uiTheme.border, "border")}>
+          <CardHeader>
+            <CardTitle className="text-slate-50">Últimos estudos registrados</CardTitle>
+            <CardDescription className="text-slate-400">Entradas criadas a partir do botão “Novo estudo”.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {studyRecords.map((record) => {
+              const accuracy = Math.round((record.correct / Math.max(1, record.questions)) * 100);
+              return (
+                <div key={record.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">{record.theme}</p>
+                      <p className="text-xs text-slate-500">{record.discipline} · {record.questions} questões · {record.correct} acertos</p>
+                    </div>
+                    <Badge className="border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">{accuracy}%</Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <Card className={classNames(uiTheme.panel, uiTheme.border, "border")}>
@@ -1022,7 +1103,7 @@ function MetricsPage() {
             <CardTitle className="text-slate-50">Top fragilidades</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {themes
+            {initialThemes
               .slice()
               .sort((a, b) => a.domain - b.domain)
               .map((item) => (
@@ -1067,6 +1148,29 @@ function MetricsPage() {
 }
 
 function FocusPage() {
+  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+  const [isRunning, setIsRunning] = useState(false);
+
+  useEffect(() => {
+    if (!isRunning) return;
+
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          setIsRunning(false);
+          return 25 * 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isRunning]);
+
+  const minutes = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  const seconds = String(secondsLeft % 60).padStart(2, "0");
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
       <Card className={classNames(uiTheme.panel, uiTheme.border, "border")}>
@@ -1078,13 +1182,18 @@ function FocusPage() {
           <div className="flex h-64 w-64 items-center justify-center rounded-full border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl shadow-slate-950/30">
             <div className="text-center">
               <p className="text-sm uppercase tracking-[0.18em] text-slate-500">Foco</p>
-              <h2 className="mt-3 text-6xl font-semibold tracking-tight text-white">25:00</h2>
-              <p className="mt-2 text-sm text-slate-400">Sessão pronta para iniciar</p>
+              <h2 className="mt-3 text-6xl font-semibold tracking-tight text-white">{minutes}:{seconds}</h2>
+              <p className="mt-2 text-sm text-slate-400">{isRunning ? "Sessão em andamento" : "Sessão pronta para iniciar"}</p>
             </div>
           </div>
           <div className="flex gap-3">
-            <Button className="h-12 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 text-white">Iniciar</Button>
-            <Button variant="outline" className="h-12 rounded-2xl border-slate-800 bg-slate-900 text-slate-200">Configurar</Button>
+            <Button className="h-12 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 text-white" onClick={() => setIsRunning((prev) => !prev)}>
+              {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              {isRunning ? "Pausar" : "Iniciar"}
+            </Button>
+            <Button variant="outline" className="h-12 rounded-2xl border-slate-800 bg-slate-900 text-slate-200" onClick={() => { setIsRunning(false); setSecondsLeft(25 * 60); }}>
+              <RotateCcw className="h-4 w-4" /> Reiniciar
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -1162,9 +1271,98 @@ function SettingsPage() {
 export default function MemoraPlatformPrototype() {
   const [active, setActive] = useState("dashboard");
   const [reviewQueue, setReviewQueue] = useState<ReviewCard[]>(initialReviewCards);
+  const [themes, setThemes] = useState<ThemeItem[]>(initialThemes);
+  const [studyRecords, setStudyRecords] = useState<StudyRecord[]>([]);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [filterDiscipline, setFilterDiscipline] = useState("Todas");
+  const [selectedDeck, setSelectedDeck] = useState<string | null>(null);
+  const [isNewStudyOpen, setIsNewStudyOpen] = useState(false);
+  const [studyDiscipline, setStudyDiscipline] = useState("Biologia");
+  const [studyTheme, setStudyTheme] = useState("");
+  const [studyQuestions, setStudyQuestions] = useState(30);
+  const [studyCorrect, setStudyCorrect] = useState(24);
+
+  const filteredThemes = useMemo(() => {
+    if (filterDiscipline === "Todas") return themes;
+    return themes.filter((item) => item.discipline === filterDiscipline);
+  }, [themes, filterDiscipline]);
+
+  function handleCreateStudy() {
+    if (!studyTheme.trim()) return;
+
+    const accuracy = Math.round((studyCorrect / Math.max(1, studyQuestions)) * 100);
+    const risk = accuracy >= 80 ? "Baixo" : accuracy >= 65 ? "Médio" : accuracy >= 45 ? "Alto" : "Crítico";
+    const nextReview = accuracy >= 80 ? "Em 7 dias" : accuracy >= 65 ? "Em 4 dias" : accuracy >= 45 ? "Em 2 dias" : "Amanhã";
+
+    setStudyRecords((prev) => [
+      {
+        id: Date.now(),
+        discipline: studyDiscipline,
+        theme: studyTheme.trim(),
+        questions: studyQuestions,
+        correct: studyCorrect,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    setThemes((prev) => [
+      {
+        id: Date.now(),
+        discipline: studyDiscipline,
+        name: studyTheme.trim(),
+        domain: accuracy,
+        nextReview,
+        risk,
+        deck: `${studyDiscipline} · Revisões recentes`,
+        cards: Math.max(10, studyQuestions),
+      },
+      ...prev,
+    ]);
+
+    setStudyTheme("");
+    setStudyQuestions(30);
+    setStudyCorrect(24);
+    setIsNewStudyOpen(false);
+    setActive("dashboard");
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
+      <Modal open={isFiltersOpen} title="Filtros da biblioteca" onClose={() => setIsFiltersOpen(false)}>
+        <div className="space-y-4">
+          <select
+            value={filterDiscipline}
+            onChange={(e) => setFilterDiscipline(e.target.value)}
+            className="h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none"
+          >
+            <option value="Todas">Todas as disciplinas</option>
+            {disciplines.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <Button className="w-full" onClick={() => setIsFiltersOpen(false)}>Aplicar filtros</Button>
+        </div>
+      </Modal>
+
+      <Modal open={isNewStudyOpen} title="Registrar novo estudo" onClose={() => setIsNewStudyOpen(false)}>
+        <div className="space-y-4">
+          <select value={studyDiscipline} onChange={(e) => setStudyDiscipline(e.target.value)} className="h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none">
+            {disciplines.map((item) => (
+              <option key={item.id} value={item.name}>{item.name}</option>
+            ))}
+          </select>
+          <Input value={studyTheme} onChange={(e) => setStudyTheme(e.target.value)} placeholder="Tema estudado" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input type="number" value={studyQuestions} onChange={(e) => setStudyQuestions(Number(e.target.value))} placeholder="Questões feitas" />
+            <Input type="number" value={studyCorrect} onChange={(e) => setStudyCorrect(Number(e.target.value))} placeholder="Questões certas" />
+          </div>
+          <Button className="w-full" onClick={handleCreateStudy}>Salvar estudo e programar revisão</Button>
+        </div>
+      </Modal>
+
       <div className="flex min-h-screen">
         <Sidebar active={active} onChange={setActive} />
 
@@ -1180,10 +1378,10 @@ export default function MemoraPlatformPrototype() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <Button variant="outline" className="h-11 rounded-2xl border-slate-800 bg-slate-900 text-slate-200">
+                <Button variant="outline" className="h-11 rounded-2xl border-slate-800 bg-slate-900 text-slate-200" onClick={() => setIsFiltersOpen(true)}>
                   <Filter className="mr-2 h-4 w-4" /> Filtros
                 </Button>
-                <Button className="h-11 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 text-white hover:opacity-95">
+                <Button className="h-11 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 text-white hover:opacity-95" onClick={() => setIsNewStudyOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" /> Novo estudo
                 </Button>
               </div>
@@ -1191,6 +1389,12 @@ export default function MemoraPlatformPrototype() {
           </header>
 
           <div className="px-4 py-6 md:px-8">
+            {selectedDeck && (
+              <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4 text-cyan-100">
+                Deck aberto: <strong>{selectedDeck}</strong>
+              </div>
+            )}
+
             <div className="mb-6 lg:hidden">
               <Tabs value={active} onValueChange={setActive}>
                 <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-2">
@@ -1205,11 +1409,11 @@ export default function MemoraPlatformPrototype() {
               </Tabs>
             </div>
 
-            {active === "dashboard" && <DashboardPage reviewQueue={reviewQueue} />}
+            {active === "dashboard" && <DashboardPage reviewQueue={reviewQueue} themes={filteredThemes} onOpenNewStudy={() => setIsNewStudyOpen(true)} />}
             {active === "review" && <ReviewPage reviewQueue={reviewQueue} setReviewQueue={setReviewQueue} />}
-            {active === "library" && <LibraryPage />}
+            {active === "library" && <LibraryPage themes={filteredThemes} onOpenDeck={setSelectedDeck} />}
             {active === "agenda" && <AgendaPage />}
-            {active === "metrics" && <MetricsPage />}
+            {active === "metrics" && <MetricsPage studyRecords={studyRecords} />}
             {active === "focus" && <FocusPage />}
             {active === "settings" && <SettingsPage />}
           </div>
