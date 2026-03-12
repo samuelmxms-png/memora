@@ -2278,7 +2278,7 @@ export default function MemoraPlatformPage() {
         <main className="w-full px-4 py-6 md:px-6 lg:px-8">
           <div className="mx-auto max-w-7xl">
             <div className="mb-6 lg:hidden">
-              <Tabs value={active} onValueChange={setActive}>
+              <Tabs value={active} onValueChange={(value) => setActive(value as ActiveTab)}>
                 <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-2">
                   <TabsTrigger value="dashboard" className="rounded-xl" onClick={() => setActive("dashboard")}>Dashboard</TabsTrigger>
                   <TabsTrigger value="review" className="rounded-xl" onClick={() => setActive("review")}>Revisão</TabsTrigger>
