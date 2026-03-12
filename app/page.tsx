@@ -2327,7 +2327,16 @@ export default function MemoraPlatformPage() {
               <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-8 text-center text-slate-400">Carregando base do usuário.</div>
             ) : (
               <>
-                {active === "dashboard" && <DashboardPage reviewQueue={reviewQueue} agendaItems={agendaItems} themes={themes} onOpenNewStudy={openNewStudy} onDeleteRecord={handleDeleteRecord} />}
+                {active === "dashboard" && (
+                  <DashboardPage
+                    reviewQueue={reviewQueue}
+                    agendaItems={agendaItems}
+                    themes={themes}
+                    onOpenNewStudy={openNewStudy}
+                    onDeleteRecord={handleDeleteRecord}
+                    userName={authUser.name}
+                  />
+                )}
                 {active === "review" && <ReviewPage reviewQueue={reviewQueue} onReviewAnswer={handleReviewAnswer} />}
                 {active === "library" && <LibraryPage themes={themes} onDeleteRecord={handleDeleteRecord} />}
                 {active === "agenda" && <AgendaPage agendaItems={agendaItems} onDeleteRecord={handleDeleteRecord} />}
