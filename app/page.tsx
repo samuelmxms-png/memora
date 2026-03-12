@@ -40,8 +40,38 @@ type ActiveTab = "dashboard" | "review" | "library" | "agenda" | "metrics" | "fo
 type SessionUser = {
   id: string;
   email: string;
+  name: string;
 };
 
+
+function toTitleCase(value: string) {
+  return value
+    .split(/[^a-zA-ZÀ-ÿ0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function getDisplayNameFromEmail(email: string) {
+  const local = email.split("@")[0] ?? "";
+  return toTitleCase(local) || "Estudante";
+}
+
+function mapAuthUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null): SessionUser | null {
+  if (!user) return null;
+  const email = user.email ?? "";
+  const metadataName = typeof user.user_metadata?.name === "string"
+    ? user.user_metadata.name
+    : typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name
+      : "";
+
+  return {
+    id: user.id,
+    email,
+    name: metadataName.trim() || getDisplayNameFromEmail(email),
+  };
+}
 
 type PeerComparisonMetrics = {
   email: string;
@@ -798,7 +828,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
       const { data } = await supabase.auth.getSession();
       const user = data.session?.user;
       if (mounted) {
-        onAuthenticated(user ? { id: user.id, email: user.email ?? "" } : null);
+        onAuthenticated(mapAuthUser(user));
         setLoading(false);
       }
     }
@@ -807,7 +837,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user;
-      onAuthenticated(user ? { id: user.id, email: user.email ?? "" } : null);
+      onAuthenticated(mapAuthUser(user));
       setLoading(false);
     });
 
@@ -829,7 +859,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
       },
     });
 
-    setMessage(error ? "Não foi possível enviar o link de acesso." : "Link de acesso enviado para o seu e-mail.");
+    setMessage(error ? "Não foi possível enviar o link de acesso." : `Pronto. Enviamos seu link de acesso para ${email.trim()}. Bons estudos.`);
     setSending(false);
   }
 
@@ -993,12 +1023,14 @@ function DashboardPage({
   themes,
   onOpenNewStudy,
   onDeleteRecord,
+  userName,
 }: {
   reviewQueue: ReviewCard[];
   agendaItems: AgendaItem[];
   themes: ThemeItem[];
   onOpenNewStudy: () => void;
   onDeleteRecord: (id: string) => void;
+  userName: string;
 }) {
   const [manualTopic, setManualTopic] = useState("");
   const [manualDiscipline, setManualDiscipline] = useState("Biologia");
@@ -1050,7 +1082,7 @@ function DashboardPage({
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cyan-300">
               <Sparkles className="h-3.5 w-3.5" /> Experiência personalizada
             </div>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-4xl">Olá. O que vamos estudar hoje?</h2>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-4xl">Olá, {userName}. O que vamos estudar hoje?</h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
               Agora o dashboard, a biblioteca e a agenda olham para a mesma base. O que foi salvo entra automaticamente na trilha de revisão.
             </p>
