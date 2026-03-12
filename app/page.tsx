@@ -828,7 +828,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
       const { data } = await supabase.auth.getSession();
       const user = data.session?.user;
       if (mounted) {
-        onAuthenticated(mapAuthUser(user));
+        onAuthenticated(user ? mapAuthUser(user) : null);
         setLoading(false);
       }
     }
@@ -837,7 +837,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user;
-      onAuthenticated(mapAuthUser(user));
+      onAuthenticated(user ? mapAuthUser(user) : null);
       setLoading(false);
     });
 
