@@ -57,6 +57,21 @@ function getDisplayNameFromEmail(email: string) {
   return toTitleCase(local) || "Estudante";
 }
 
+function slugifyAccount(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 40);
+}
+
+function buildAccountEmail(account: string) {
+  const slug = slugifyAccount(account);
+  return slug ? `${slug}@memora.local` : "";
+}
+
 function mapAuthUser(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null): SessionUser | null {
   if (!user) return null;
   const email = user.email ?? "";
@@ -289,8 +304,8 @@ function Button({
     <button
       type={type}
       className={classNames(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
-        variant ? variants[variant] : "bg-cyan-600 text-white hover:bg-cyan-500",
+        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-cyan-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 disabled:cursor-not-allowed disabled:opacity-60",
+        variant ? variants[variant] : "bg-cyan-600 text-white shadow-lg shadow-cyan-950/30 hover:bg-cyan-500",
         className,
       )}
       {...props}
@@ -311,11 +326,11 @@ function Progress({ value = 0, className }: { value?: number; className?: string
 }
 
 function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={classNames("w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500", className)} {...props} />;
+  return <input className={classNames("w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20", className)} {...props} />;
 }
 
 function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={classNames("w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500", className)} {...props} />;
+  return <textarea className={classNames("w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20", className)} {...props} />;
 }
 
 function Tabs({ children }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode }) {
@@ -816,7 +831,10 @@ function StatCard({
 }
 
 function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | null) => void }) {
-  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [account, setAccount] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -847,69 +865,178 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
     };
   }, [onAuthenticated]);
 
-  async function handleLogin() {
-  const cleanEmail = email.trim();
+  async function handleSubmit() {
+    const cleanAccount = account.trim();
+    const cleanName = name.trim();
+    const syntheticEmail = buildAccountEmail(cleanAccount);
 
-  setSending(true);
-  setMessage("");
+    setSending(true);
+    setMessage("");
 
-  if (!cleanEmail) {
-    setMessage("Digite seu e-mail para receber o link de acesso.");
+    if (!cleanAccount) {
+      setMessage("Digite um nome de conta para acessar a Memora.");
+      setSending(false);
+      return;
+    }
+
+    if (!syntheticEmail) {
+      setMessage("Use um nome de conta com letras ou números.");
+      setSending(false);
+      return;
+    }
+
+    if (!password.trim() || password.trim().length < 6) {
+      setMessage("Crie uma senha com pelo menos 6 caracteres.");
+      setSending(false);
+      return;
+    }
+
+    if (mode === "signup") {
+      const displayName = cleanName || toTitleCase(cleanAccount);
+      const { data, error } = await supabase.auth.signUp({
+        email: syntheticEmail,
+        password: password.trim(),
+        options: {
+          data: {
+            name: displayName,
+            username: cleanAccount,
+          },
+        },
+      });
+
+      if (error) {
+        setMessage(`Não foi possível criar sua conta: ${error.message}`);
+        setSending(false);
+        return;
+      }
+
+      if (!data.session) {
+        const loginAttempt = await supabase.auth.signInWithPassword({
+          email: syntheticEmail,
+          password: password.trim(),
+        });
+
+        if (loginAttempt.error) {
+          setMessage("Conta criada, mas o login automático não foi concluído. Desative a confirmação de e-mail no Supabase Auth para usar acesso por conta e senha sem e-mail.");
+          setSending(false);
+          return;
+        }
+      }
+
+      setMessage(`Conta criada com sucesso. Bem-vinda, ${displayName}.`);
+      setSending(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: syntheticEmail,
+      password: password.trim(),
+    });
+
+    if (error) {
+      setMessage(`Não foi possível entrar: ${error.message}`);
+      setSending(false);
+      return;
+    }
+
+    setMessage(`Tudo certo. Bem-vinda de volta, ${toTitleCase(cleanAccount)}.`);
     setSending(false);
-    return;
   }
-
-  const redirectTo =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : undefined;
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email: cleanEmail,
-    options: {
-      emailRedirectTo: redirectTo,
-    },
-  });
-
-  if (error) {
-    setMessage(`Não foi possível enviar o link de acesso: ${error.message}`);
-    setSending(false);
-    return;
-  }
-
-  setMessage(`Pronto. Enviamos seu link de acesso para ${cleanEmail}. Bons estudos.`);
-  setSending(false);
-}
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Carregando Memora...</div>;
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-50">
-      <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/70 p-8 shadow-2xl shadow-slate-950/30">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-slate-50">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.18),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(59,130,246,0.16),_transparent_26%)]" />
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45 }}
+        className="relative w-full max-w-md rounded-[28px] border border-slate-800 bg-slate-900/75 p-8 shadow-2xl shadow-slate-950/40 backdrop-blur-xl"
+      >
         <div className="mb-6 flex items-center gap-3">
-          <div className="rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 p-3">
+          <motion.div whileHover={{ scale: 1.05, rotate: -4 }} className="rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 p-3 shadow-lg shadow-cyan-500/20">
             <Brain className="h-6 w-6 text-white" />
-          </div>
+          </motion.div>
           <div>
             <h1 className="text-2xl font-semibold">Memora</h1>
-            <p className="text-sm text-slate-400">Acesse sua área pessoal de revisão.</p>
+            <p className="text-sm text-slate-400">Acesse sua área pessoal de revisão com uma conta simples.</p>
           </div>
         </div>
-        <div className="space-y-4">
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Seu e-mail" type="email" />
-          <Button className="w-full" onClick={handleLogin} disabled={sending}>
-            <User className="h-4 w-4" /> {sending ? "Enviando..." : "Entrar com link mágico"}
-          </Button>
-          {message && <p className="text-sm text-slate-400">{message}</p>}
+
+        <div className="mb-6 grid grid-cols-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("login");
+              setMessage("");
+            }}
+            className={classNames(
+              "rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200",
+              mode === "login" ? "bg-cyan-500 text-white shadow-lg shadow-cyan-950/40" : "text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+            )}
+          >
+            Entrar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("signup");
+              setMessage("");
+            }}
+            className={classNames(
+              "rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200",
+              mode === "signup" ? "bg-cyan-500 text-white shadow-lg shadow-cyan-950/40" : "text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+            )}
+          >
+            Criar conta
+          </button>
         </div>
-      </div>
+
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-200">Nome da conta</p>
+            <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="ex: sam.maximus" autoComplete="username" />
+            <p className="mt-2 text-xs text-slate-500">Esse será seu identificador interno de acesso. Não precisa usar e-mail.</p>
+          </div>
+
+          {mode === "signup" && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-200">Seu nome</p>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Como você quer aparecer na plataforma" autoComplete="name" />
+            </div>
+          )}
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-200">Senha</p>
+            <Input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} />
+          </div>
+
+          <motion.div whileTap={{ scale: 0.985 }}>
+            <Button className="w-full rounded-2xl py-6 text-base" onClick={handleSubmit} disabled={sending}>
+              <Sparkles className="h-4 w-4" /> {sending ? "Processando..." : mode === "login" ? "Entrar na Memora" : "Criar conta e entrar"}
+            </Button>
+          </motion.div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Fluxo da conta</p>
+            <p className="mt-2 text-sm text-slate-300">
+              {mode === "login"
+                ? "Entre com nome da conta + senha e retome suas revisões sem depender de link por e-mail."
+                : "Crie uma conta rápida, com seu nome e sua senha, e já comece a usar a plataforma no mesmo instante."}
+            </p>
+          </div>
+
+          {message && <p className="text-sm text-slate-300">{message}</p>}
+        </div>
+      </motion.div>
     </div>
   );
 }
 
-function Sidebar({ active, onChange, userEmail, onSignOut }: { active: ActiveTab; onChange: (value: ActiveTab) => void; userEmail: string; onSignOut: () => void }) {
+function Sidebar({ active, onChange, userLabel, onSignOut }: { active: ActiveTab; onChange: (value: ActiveTab) => void; userLabel: string; onSignOut: () => void }) {
   const items: Array<[ActiveTab, string, React.ComponentType<{ className?: string }>]> = [
     ["dashboard", "Dashboard", BarChart3],
     ["review", "Central de Revisão", BrainCircuit],
@@ -935,7 +1062,7 @@ function Sidebar({ active, onChange, userEmail, onSignOut }: { active: ActiveTab
           </div>
           <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Usuário</p>
-            <p className="mt-2 truncate text-sm font-medium text-slate-100">{userEmail}</p>
+            <p className="mt-2 truncate text-sm font-medium text-slate-100">{userLabel}</p>
             <div className="mt-4 flex items-center justify-between gap-2 text-xs text-slate-400">
               <span>Vestibular de Medicina</span>
               <button onClick={onSignOut} className="rounded-lg border border-slate-700 px-2 py-1 hover:bg-slate-800">
@@ -2323,7 +2450,7 @@ export default function MemoraPlatformPage() {
       />
 
       <div className="flex min-h-screen">
-        <Sidebar active={active} onChange={setActive} userEmail={authUser.email} onSignOut={handleSignOut} />
+        <Sidebar active={active} onChange={setActive} userLabel={authUser.name} onSignOut={handleSignOut} />
 
         <main className="w-full px-4 py-6 md:px-6 lg:px-8">
           <div className="mx-auto max-w-7xl">
