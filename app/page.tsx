@@ -832,7 +832,7 @@ function StatCard({
 
 function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | null) => void }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [account, setAccount] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
@@ -866,40 +866,41 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
   }, [onAuthenticated]);
 
   async function handleSubmit() {
-    const cleanAccount = account.trim();
+    const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
-    const syntheticEmail = buildAccountEmail(cleanAccount);
+    const cleanPassword = password.trim();
 
     setSending(true);
     setMessage("");
 
-    if (!cleanAccount) {
-      setMessage("Digite um nome de conta para acessar a Memora.");
+    if (!cleanEmail) {
+      setMessage("Digite seu e-mail para acessar a Memora.");
       setSending(false);
       return;
     }
 
-    if (!syntheticEmail) {
-      setMessage("Use um nome de conta com letras ou números.");
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
+    if (!isValidEmail) {
+      setMessage("Digite um e-mail válido.");
       setSending(false);
       return;
     }
 
-    if (!password.trim() || password.trim().length < 6) {
-      setMessage("Crie uma senha com pelo menos 6 caracteres.");
+    if (!cleanPassword || cleanPassword.length < 6) {
+      setMessage("Use uma senha com pelo menos 6 caracteres.");
       setSending(false);
       return;
     }
 
     if (mode === "signup") {
-      const displayName = cleanName || toTitleCase(cleanAccount);
+      const displayName = cleanName || getDisplayNameFromEmail(cleanEmail);
       const { data, error } = await supabase.auth.signUp({
-        email: syntheticEmail,
-        password: password.trim(),
+        email: cleanEmail,
+        password: cleanPassword,
         options: {
           data: {
             name: displayName,
-            username: cleanAccount,
+            full_name: displayName,
           },
         },
       });
@@ -912,12 +913,12 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
 
       if (!data.session) {
         const loginAttempt = await supabase.auth.signInWithPassword({
-          email: syntheticEmail,
-          password: password.trim(),
+          email: cleanEmail,
+          password: cleanPassword,
         });
 
         if (loginAttempt.error) {
-          setMessage("Conta criada, mas o login automático não foi concluído. Desative a confirmação de e-mail no Supabase Auth para usar acesso por conta e senha sem e-mail.");
+          setMessage("Conta criada. Para entrar automaticamente, desative a confirmação de e-mail no Supabase Auth.");
           setSending(false);
           return;
         }
@@ -929,8 +930,8 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
     }
 
     const { error } = await supabase.auth.signInWithPassword({
-      email: syntheticEmail,
-      password: password.trim(),
+      email: cleanEmail,
+      password: cleanPassword,
     });
 
     if (error) {
@@ -939,7 +940,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
       return;
     }
 
-    setMessage(`Tudo certo. Bem-vinda de volta, ${toTitleCase(cleanAccount)}.`);
+    setMessage(`Tudo certo. Bem-vinda de volta, ${getDisplayNameFromEmail(cleanEmail)}.`);
     setSending(false);
   }
 
@@ -962,7 +963,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
           </motion.div>
           <div>
             <h1 className="text-2xl font-semibold">Memora</h1>
-            <p className="text-sm text-slate-400">Acesse sua área pessoal de revisão com uma conta simples.</p>
+            <p className="text-sm text-slate-400">Acesse sua área pessoal com login por e-mail e senha.</p>
           </div>
         </div>
 
@@ -997,9 +998,9 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
 
         <div className="space-y-4">
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-200">Nome da conta</p>
-            <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="ex: sam.maximus" autoComplete="username" />
-            <p className="mt-2 text-xs text-slate-500">Esse será seu identificador interno de acesso. Não precisa usar e-mail.</p>
+            <p className="mb-2 text-sm font-medium text-slate-200">E-mail</p>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@exemplo.com" type="email" autoComplete="email" />
+            <p className="mt-2 text-xs text-slate-500">Seu e-mail será usado apenas para acessar sua conta com senha.</p>
           </div>
 
           {mode === "signup" && (
@@ -1024,8 +1025,8 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Fluxo da conta</p>
             <p className="mt-2 text-sm text-slate-300">
               {mode === "login"
-                ? "Entre com nome da conta + senha e retome suas revisões sem depender de link por e-mail."
-                : "Crie uma conta rápida, com seu nome e sua senha, e já comece a usar a plataforma no mesmo instante."}
+                ? "Entre com e-mail e senha para retomar suas revisões com rapidez."
+                : "Crie sua conta com nome, e-mail e senha e comece a usar a plataforma no mesmo instante."}
             </p>
           </div>
 
