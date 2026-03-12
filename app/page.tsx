@@ -848,20 +848,38 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (user: SessionUser | n
   }, [onAuthenticated]);
 
   async function handleLogin() {
-    if (!email.trim()) return;
-    setSending(true);
-    setMessage("");
+  const cleanEmail = email.trim();
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
+  setSending(true);
+  setMessage("");
 
-    setMessage(error ? "Não foi possível enviar o link de acesso." : `Pronto. Enviamos seu link de acesso para ${email.trim()}. Bons estudos.`);
+  if (!cleanEmail) {
+    setMessage("Digite seu e-mail para receber o link de acesso.");
     setSending(false);
+    return;
   }
+
+  const redirectTo =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : undefined;
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: cleanEmail,
+    options: {
+      emailRedirectTo: redirectTo,
+    },
+  });
+
+  if (error) {
+    setMessage(`Não foi possível enviar o link de acesso: ${error.message}`);
+    setSending(false);
+    return;
+  }
+
+  setMessage(`Pronto. Enviamos seu link de acesso para ${cleanEmail}. Bons estudos.`);
+  setSending(false);
+}
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Carregando Memora...</div>;
